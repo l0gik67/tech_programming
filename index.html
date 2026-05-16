@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StopGame Parser</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Unbounded:wght@400;700&display=swap');
+
+    :root {
+      --bg:       #0d0f14;
+      --surface:  #13161e;
+      --border:   #1e2330;
+      --accent:   #e8ff47;
+      --accent2:  #47c4ff;
+      --text:     #c8d0e0;
+      --text-dim: #4a5168;
+      --green:    #47ffb0;
+      --red:      #ff6b6b;
+      --orange:   #ffaa47;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px 64px;
+    }
+
+    /* ── Header ── */
+    header {
+      width: 100%;
+      max-width: 820px;
+      margin-bottom: 40px;
+    }
+
+    .logo {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .25em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-family: 'Unbounded', sans-serif;
+      font-size: clamp(22px, 4vw, 36px);
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.1;
+      margin-bottom: 12px;
+    }
+
+    h1 span { color: var(--accent); }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    /* ── Control panel ── */
+    .panel {
+      width: 100%;
+      max-width: 820px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .btn-start {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #0d0f14;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      padding: 14px 32px;
+      cursor: pointer;
+      transition: transform .12s, box-shadow .12s, background .15s;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-start::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: #fff;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+
+    .btn-start:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(232,255,71,.35); }
+    .btn-start:active { transform: translateY(0); }
+    .btn-start:disabled {
+      background: var(--border);
+      color: var(--text-dim);
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .status-area { flex: 1; }
+
+    .status-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .15em;
+      margin-bottom: 8px;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 99px;
+      transition: width .4s ease;
+    }
+
+    .progress-fill.indeterminate {
+      width: 40%;
+      animation: slide 1.4s ease-in-out infinite;
+    }
+
+    @keyframes slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+
+    .counter {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 6px;
+    }
+
+    .counter b { color: var(--accent); }
+
+    /* ── Console ── */
+    .console-wrap {
+      width: 100%;
+      max-width: 820px;
+    }
+
+    .console-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom: none;
+      border-radius: 10px 10px 0 0;
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+
+    .console-title {
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      margin-left: 6px;
+    }
+
+    .btn-clear {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+      transition: color .15s;
+    }
+    .btn-clear:hover { color: var(--text); }
+
+    #console {
+      background: #090b10;
+      border: 1px solid var(--border);
+      border-radius: 0 0 10px 10px;
+      padding: 20px 24px;
+      height: 420px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.75;
+      scroll-behavior: smooth;
+    }
+
+    #console::-webkit-scrollbar { width: 6px; }
+    #console::-webkit-scrollbar-track { background: transparent; }
+    #console::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+    .line { display: block; white-space: pre-wrap; word-break: break-all; }
+    .line-log  { color: var(--text); }
+    .line-ok   { color: var(--green); }
+    .line-err  { color: var(--red); }
+    .line-warn { color: var(--orange); }
+    .line-info { color: var(--accent2); }
+    .line-done { color: var(--accent); font-weight: 600; }
+    .line-dim  { color: var(--text-dim); }
+
+    .cursor {
+      display: inline-block;
+      width: 8px; height: 14px;
+      background: var(--accent);
+      vertical-align: middle;
+      margin-left: 2px;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ── Done card ── */
+    .done-card {
+      display: none;
+      width: 100%;
+      max-width: 820px;
+      margin-top: 20px;
+      background: var(--surface);
+      border: 1px solid var(--green);
+      border-radius: 12px;
+      padding: 24px 28px;
+      gap: 12px;
+    }
+    .done-card.visible { display: flex; align-items: center; gap: 16px; }
+    .done-icon { font-size: 32px; }
+    .done-text h3 { font-family: 'Unbounded', sans-serif; font-size: 14px; color: var(--green); margin-bottom: 4px; }
+    .done-text p  { font-size: 12px; color: var(--text-dim); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">stopgame.ru</div>
+    <h1>Game <span>Parser</span></h1>
+    <p class="subtitle">Автоматический сбор данных об играх: дата, разработчик, платформы, рейтинг</p>
+  </header>
+
+  <!-- Control panel -->
+  <div class="panel">
+    <button class="btn-start" id="btnStart" onclick="startParsing()">▶ Запустить</button>
+    <div class="status-area">
+      <div class="status-label" id="statusLabel">Ожидание запуска</div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="counter" id="counter">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- Console -->
+  <div class="console-wrap">
+    <div class="console-header">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <span class="console-title">console output</span>
+      <button class="btn-clear" onclick="clearConsole()">очистить</button>
+    </div>
+    <div id="console">
+      <span class="line line-dim">// Нажмите «Запустить» для начала парсинга</span>
+      <span class="cursor"></span>
+    </div>
+  </div>
+
+  <!-- Done card -->
+  <div class="done-card" id="doneCard">
+    <div class="done-icon">✅</div>
+    <div class="done-text">
+      <h3>Парсинг завершён</h3>
+      <p id="doneText">Данные успешно собраны.</p>
+    </div>
+  </div>
+
+<script>
+  let es = null;
+  let parsed = 0;
+  let total = 0;
+
+  function startParsing() {
+    const btn = document.getElementById('btnStart');
+    btn.disabled = true;
+    parsed = 0; total = 0;
+
+    setStatus('Запуск...', true);
+    clearConsole();
+    document.getElementById('doneCard').classList.remove('visible');
+
+    fetch('/start', { method: 'POST' })
+      .then(r => {
+        if (r.status === 409) { appendLine('⚠ Парсер уже запущен', 'warn'); btn.disabled = false; return; }
+        appendLine('🚀 Парсер запущен', 'info');
+        listenStream();
+      })
+      .catch(e => {
+        appendLine('✗ Не удалось подключиться к серверу: ' + e, 'err');
+        btn.disabled = false;
+        setStatus('Ошибка подключения', false);
+      });
+  }
+
+  function listenStream() {
+    if (es) es.close();
+    es = new EventSource('/stream');
+
+    es.addEventListener('log', e => {
+      const msg = e.data;
+      appendLine(msg, classifyLine(msg));
+
+      // Обновляем счётчик по строке "[x/y]"
+      const m = msg.match(/\[(\d+)\/(\d+)\]/);
+      if (m) {
+        parsed = parseInt(m[1]);
+        total  = parseInt(m[2]);
+        updateProgress();
+      }
+      if (msg.includes('Найдено')) {
+        const nm = msg.match(/(\d+)\s+игр/);
+        if (nm) { total = parseInt(nm[1]); updateProgress(); }
+        setStatus('Парсинг...', true);
+      }
+    });
+
+    es.addEventListener('done', e => {
+      es.close();
+      document.getElementById('btnStart').disabled = false;
+      document.getElementById('progressFill').style.width = '100%';
+      document.getElementById('progressFill').classList.remove('indeterminate');
+      setStatus('Готово', false);
+
+      let games = [];
+      try { games = JSON.parse(e.data); } catch {}
+      appendLine(`\n🏁 Завершено! Собрано ${games.length} игр.`, 'done');
+
+      const doneCard = document.getElementById('doneCard');
+      document.getElementById('doneText').textContent = `Собрано ${games.length} игр.`;
+      doneCard.classList.add('visible');
+      removeCursor();
+    });
+
+    es.onerror = () => {
+      appendLine('✗ Соединение прервано', 'err');
+      es.close();
+      document.getElementById('btnStart').disabled = false;
+      setStatus('Ошибка потока', false);
+    };
+  }
+
+  function classifyLine(msg) {
+    if (msg.startsWith('✅') || msg.startsWith('🏁')) return 'done';
+    if (msg.startsWith('  →'))   return 'ok';
+    if (msg.includes('Ошибка') || msg.startsWith('✗') || msg.startsWith('💥')) return 'err';
+    if (msg.startsWith('🚀') || msg.startsWith('🔍')) return 'info';
+    return 'log';
+  }
+
+  function appendLine(text, cls = 'log') {
+    const box = document.getElementById('console');
+    // убираем курсор перед добавлением строки
+    const cur = box.querySelector('.cursor');
+    if (cur) cur.remove();
+
+    const span = document.createElement('span');
+    span.className = `line line-${cls}`;
+    span.textContent = text;
+    box.appendChild(span);
+    box.appendChild(document.createElement('br'));
+
+    // возвращаем курсор
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor';
+    box.appendChild(cursor);
+
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function removeCursor() {
+    const cur = document.getElementById('console').querySelector('.cursor');
+    if (cur) cur.remove();
+  }
+
+  function clearConsole() {
+    const box = document.getElementById('console');
+    box.innerHTML = '<span class="line line-dim">// Консоль очищена</span><span class="cursor"></span>';
+  }
+
+  function setStatus(text, running) {
+    document.getElementById('statusLabel').textContent = text;
+    const fill = document.getElementById('progressFill');
+    if (running) {
+      fill.classList.add('indeterminate');
+    } else {
+      fill.classList.remove('indeterminate');
+    }
+  }
+
+  function updateProgress() {
+    document.getElementById('counter').innerHTML =
+      total ? `Обработано: <b>${parsed}</b> / ${total}` : '&nbsp;';
+    if (total) {
+      const fill = document.getElementById('progressFill');
+      fill.classList.remove('indeterminate');
+      fill.style.width = (parsed / total * 100) + '%';
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,33 +1,48 @@
+import queue
+import threading
+import sys
+import time
 import requests
 from bs4 import BeautifulSoup
+from flask import Flask, Response, send_from_directory
+import json
+import os
+
+app = Flask(__name__)
+
+# ─── Очередь для передачи логов из парсера в SSE-поток
+log_queue = queue.Queue()
+is_running = False
+
+
+
+def log(msg):
+    """Отправляет строку в очередь и в stdout."""
+    print(msg, flush=True)
+    log_queue.put(("log", str(msg)))
 
 
 def get_game_sitemaps():
     index_url = "https://stopgame.ru/sitemap.xml"
-
-    resp = requests.get(index_url)
+    resp = requests.get(index_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
     soup = BeautifulSoup(resp.text, "xml")
+    return [loc.text for loc in soup.find_all("loc") if "games_" in loc.text]
 
-    game_sitemaps = [
-        loc.text for loc in soup.find_all("loc")
-        if "games_" in loc.text
-    ]
-    return game_sitemaps
 
 def get_all_game_urls():
     all_urls = []
     for sitemap_url in get_game_sitemaps():
-        resp = requests.get(sitemap_url)
+        resp = requests.get(sitemap_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         soup = BeautifulSoup(resp.text, "xml")
         urls = [loc.text for loc in soup.find_all("loc")]
         all_urls.extend(urls)
     return all_urls
 
+
 def parse_game_page(url):
-    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Дата, разработчик, платформы
     dl = soup.find("dl", class_=lambda c: c and "_game-info__grid" in c)
     data = {}
     if dl:
@@ -38,7 +53,6 @@ def parse_game_page(url):
                 if i + 1 < len(items) and items[i + 1].name == "dd":
                     data[key] = items[i + 1].get_text(strip=True)
 
-    # Рейтинг и количество голосов
     rating_tag = soup.find("span", class_=lambda c: c and "_game-rating_" in c)
     votes_tag = soup.find("span", class_=lambda c: c and "_total-game-votes_" in c)
 
@@ -51,12 +65,72 @@ def parse_game_page(url):
         "votes": votes_tag.get_text(strip=True) if votes_tag else None,
     }
 
-def parse_all_games(game_urls):
-    games = []
-    for i, url in enumerate(game_urls):
-        print("Parse url {url}".format(url=url))
-        game = parse_game_page(url)
-        games.append(game)
-    return games
 
-print(parse_all_games(get_all_game_urls())[:2])
+def run_parser():
+    global is_running
+    is_running = True
+    try:
+        log("🔍 Получаем список URL из sitemap...")
+        urls = get_all_game_urls()
+        log(f"✅ Найдено {len(urls)} игр")
+
+        games = []
+        for i, url in enumerate(urls, 1):
+            log(f"[{i}/{len(urls)}] Парсим: {url}")
+            try:
+                game = parse_game_page(url)
+                games.append(game)
+                log(f"  → {game.get('developer', '—')} | {game.get('date', '—')} | ★ {game.get('rating', '—')}")
+            except Exception as e:
+                log(f"  ✗ Ошибка: {e}")
+            time.sleep(0.5)
+
+        log(f"\n🏁 Готово! Обработано {len(games)} игр.")
+        log_queue.put(("done", json.dumps(games, ensure_ascii=False)))
+    except Exception as e:
+        log(f"💥 Критическая ошибка: {e}")
+        log_queue.put(("done", "[]"))
+    finally:
+        is_running = False
+
+
+# ─── Маршруты Flask ───────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return send_from_directory(".", "index.html")
+
+
+@app.route("/start", methods=["POST"])
+def start():
+    global is_running
+    if is_running:
+        return {"status": "already_running"}, 409
+    # Очищаем старую очередь
+    while not log_queue.empty():
+        log_queue.get_nowait()
+    threading.Thread(target=run_parser, daemon=True).start()
+    return {"status": "started"}
+
+
+@app.route("/stream")
+def stream():
+    """Server-Sent Events: клиент подписывается и получает логи в реальном времени."""
+
+    def event_generator():
+        while True:
+            try:
+                kind, data = log_queue.get(timeout=30)
+                yield f"event: {kind}\ndata: {data}\n\n"
+                if kind == "done":
+                    break
+            except queue.Empty:
+                yield "event: ping\ndata: \n\n"  # keepalive
+
+    return Response(event_generator(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+if __name__ == "__main__":
+    print("Сервер запущен: http://localhost:5000")
+    app.run(debug=False, threaded=True, port=5000)
